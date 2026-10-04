@@ -35,15 +35,18 @@ def load_real(path: str | Path, tick_size: float = 0.25, rth_utc: tuple | None =
         v[s.to_numpy(np.int64) == UNDEF_PRICE] = np.nan
         return np.round(v / PRICE_SCALE / tick_size)
 
-    action = df["action"].map(lambda b: b.decode() if isinstance(b, bytes) else b)
-    side = df["side"].map(lambda b: b.decode() if isinstance(b, bytes) else b)
+    def as_str(s: pd.Series) -> np.ndarray:
+        v = s.to_numpy()
+        return v.astype("S1").astype(str) if v.dtype == object and len(v) and isinstance(v[0], bytes) else v.astype(str)
+
+    action, side = as_str(df["action"]), as_str(df["side"])
     out = pd.DataFrame({
         "ts": df["ts_event"].to_numpy(np.int64) / 1e9,
         "kind": np.where(action == "T", "T", "Q"),
         "price": ticks(df["price"]),
         "size": df["size"].to_numpy(float),
         # Databento trade side = aggressor side: 'A' = sell aggressor (hit bid), 'B' = buy aggressor.
-        "aggressor": side.map({"A": "S", "B": "B"}).fillna("N").to_numpy(),
+        "aggressor": np.select([side == "A", side == "B"], ["S", "B"], "N"),
         "bid_px": ticks(df["bid_px_00"]), "ask_px": ticks(df["ask_px_00"]),
         "bid_sz": df["bid_sz_00"].to_numpy(float), "ask_sz": df["ask_sz_00"].to_numpy(float),
     })
