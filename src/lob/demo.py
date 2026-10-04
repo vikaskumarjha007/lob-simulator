@@ -21,22 +21,32 @@ OUT = Path("outputs")
 ES_COLOR, SYN_COLOR = "#2a78d6", "#eb6834"
 
 
+LOCAL = Path("data/raw/es_order_results")   # per-order rows: gitignored, never committed
+
+
 def run_real(paths: list[str]) -> None:
+    """Process each day once (cached per day in data/raw/), then aggregate everything cached."""
     from data.loaders import load_real
-    parts = []
+    LOCAL.mkdir(parents=True, exist_ok=True)
     for p in paths:
+        day = Path(p).parent.parent.name.replace("date=", "")
+        target = LOCAL / f"{day}.csv"
+        if target.exists():
+            continue
         r = qx.run(load_real(p), every_s=30, timeout_s=300)
-        r["day"] = Path(p).parent.parent.name
-        parts.append(r)
-        print(p, len(r), r["outcome"].value_counts().to_dict())
-    res = pd.concat(parts, ignore_index=True)
+        r["day"] = day
+        r.to_csv(target, index=False)
+        print(day, len(r), r["outcome"].value_counts().to_dict(), flush=True)
+    res = pd.concat([pd.read_csv(f) for f in sorted(LOCAL.glob("*.csv"))], ignore_index=True)
     OUT.mkdir(exist_ok=True)
     qx.fill_curve(res).to_csv(OUT / "es_fill_curve.csv", index=False)
     qx.adverse_selection(res).to_csv(OUT / "es_adverse.csv", index=False)
-    meta = {"days": res["day"].nunique(), "orders": len(res),
-            **{f"share_{k}": v for k, v in res["outcome"].value_counts(normalize=True).items()}}
+    meta = {"days": res["day"].nunique(), "first_day": res["day"].min(), "last_day": res["day"].max(),
+            "orders": len(res),
+            **{f"share_{k}": round(v, 4) for k, v in res["outcome"].value_counts(normalize=True).items()},
+            "median_time_to_fill_s": res["time_to_fill"].median()}
     pd.Series(meta).to_csv(OUT / "es_meta.csv", header=False)
-    print(pd.Series(meta))
+    print(pd.Series(meta).to_string())
 
 
 def run_demo() -> None:
