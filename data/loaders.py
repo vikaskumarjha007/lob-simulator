@@ -26,9 +26,9 @@ def load_real(path: str | Path, tick_size: float = 0.25, rth_utc: tuple | None =
     df = pd.read_parquet(path, columns=cols)
     df = df[(df["flags"].astype(int) & F_SNAPSHOT) == 0]
     if rth_utc:
-        t = pd.to_datetime(df["ts_event"].astype("int64"), unit="ns", utc=True)
-        hhmm = t.dt.strftime("%H:%M")
-        df = df[(hhmm >= rth_utc[0]) & (hhmm < rth_utc[1])]
+        sod = (df["ts_event"].to_numpy(np.int64) // 1_000_000_000) % 86_400   # UTC second of day
+        lo, hi = (int(h) * 3600 + int(m) * 60 for h, m in (x.split(":") for x in rth_utc))
+        df = df[(sod >= lo) & (sod < hi)]
 
     def ticks(s: pd.Series) -> np.ndarray:
         v = s.to_numpy(np.int64).astype(float)
